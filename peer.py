@@ -21,7 +21,7 @@ class Peer:
         if os.path.isdir('./'+self.address):
             all_file_names = os.listdir('./'+self.address)
             for file in all_file_names:
-                if os.path.isdir('./'+self.address+'/'+file): #асьюмим что папки не отправляюся
+                if os.path.isdir('./'+self.address+'/'+file):
                     print(f'Found directory (will not be sent): {file}')
                 else:
                     self.announce(file)
@@ -35,7 +35,7 @@ class Peer:
             with open("./main_dht_addresses.txt", "r") as file:
                 actual_dht = file.read().splitlines()
         except Exception as e:
-            print(f"Непредвиденный пиздец в get_dht {e}")
+            print(f"Error in get_dht {e}")
         return actual_dht
         
     
@@ -45,17 +45,18 @@ class Peer:
     def get_packet(self):
         pass
 
-    # def get_peers(self):
-    #     return self.node.get_peers()
+    def get_peers(self):
+        return self.node.get_peers()
 
-    # def download_file(self):
-    #     peers = self.get_peers()
-    #     if (len(peers) == 0):
-    #         raise Exception("There are no any available peers")
+    def download_file(self):
+        peers = self.get_peers()
+        if (len(peers) == 0):
+            raise Exception("There are no any available peers")
         
-    #     while True:
-    #         data, addr = self.socket.recvfrom(MSS)
-            
+        while True:
+            data, addr = self.socket.recvfrom(MSS)
+
+
 
 if __name__ == '__main__':
     
