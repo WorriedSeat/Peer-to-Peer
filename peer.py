@@ -79,7 +79,7 @@ class Peer:
                 response = f"sizeof|{file_size}".encode()
             else:
                 bytes_ = self.get_file_packet(parsed_data[1].decode("utf-8"), int(parsed_data[0].decode("utf-8")))
-                response = parsed_data[0] + b'|' + bytes_
+                response = bytes(f"{parsed_data[0].decode()}|", "utf-8") + bytes_
 
             self.socket.sendto(response, (addr))
     
@@ -88,8 +88,8 @@ class Peer:
             raise NameError(f"Peer {self.address} don't have file {file_name}")
         
         with open('./'+self.address+'/'+file_name, 'rb') as file:
-            file.seek((MSS - 5) * packet_number)
-            bytes_ = file.read(MSS - 5)
+            file.seek(MSS * packet_number)
+            bytes_ = file.read(MSS)
             return bytes_
         
     def get_packet(self):
@@ -141,16 +141,15 @@ class Peer:
             request = f"{packet_number}|{filename}".encode()
             self.socket.sendto(request, (peer_ip, peer_port))
 
-            data, _ = self.socket.recvfrom(PACKET_SIZE)
+            data, _ = self.socket.recvfrom(PACKET_SIZE + len(str(packet_number)) + 1)
             parsed_data = data.split(b'|')
             received_number = -1
             if (parsed_data):
                 received_number = int(parsed_data[0].decode("utf-8"))
 
-            packet_data = parsed_data[1]
-
             with packet_map_lock:
-                packet_map[received_number] = packet_data
+                packet_map[received_number] = data
+
         except Exception as e:
             print(f"Thread error: {e}")
 
@@ -164,17 +163,18 @@ class Peer:
             mode = 'ab'
         else:
             mode='wb'
-            os.makedirs('./' + self.address)
+            if not os.path.exists('./'+self.address):
+                os.makedirs('./' + self.address)
         
         if (keys[0] == 0):
             file = open('./'+self.address+'/'+file_name, mode='w')
+            file.close()
+
         file = open('./'+self.address+'/'+file_name, mode='ab')
+
         for key in keys:
-            file.write(packets.get(key))
+            file.write(packets[key][len(str(key)) + 1:])
         file.close()
-        # with open('./'+self.address+'/'+file_name, mode='') as file:
-        #     for key in keys:
-        #         file.write(packets.get(key))
         
 if __name__ == '__main__':
 
