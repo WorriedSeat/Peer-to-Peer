@@ -4,6 +4,8 @@ import threading
 from random import randint
 import argparse
 import math
+import time
+
 # import DHT_node
 IP = "0.0.0.0"
 MSS = 1024
@@ -19,6 +21,7 @@ class Peer:
         self.address = IP+':'+str(port)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind((IP, port))
+        self.files_size = {}
         
         # self.node = DHT_node.DHT(IP, dht_port)
         # self.node.start()
@@ -47,7 +50,6 @@ class Peer:
     
     def get_file_size(self, peers: list, filename: str):
         file_size = -1
-        print("Inside get_file_size")
         counter = 0
         while (file_size == -1):
             # peer_ip, peer_port = peers[randint(0, len(peers) - 1)].split(":")
@@ -58,34 +60,28 @@ class Peer:
 
             data, _ = self.socket.recvfrom(PACKET_SIZE)
             if (data):
-                print("Inside data")
                 parsed_data = data.split(b'|')
-
                 if (parsed_data[0].decode("utf-8") == "sizeof"):
-                    received_filename = parsed_data[1].decode("utf-8")
-                    file_size = int(parsed_data[2].decode("utf-8"))
-                    self.files_size[received_filename] = file_size
+                    file_size = int(parsed_data[1].decode("utf-8"))
+                    self.files_size[filename] = file_size
             
             counter += 1
             if (counter == 1000):
                 raise Exception(f"Impossible to get {filename} size")
             
-    
-
        
     def send_packet(self):
         data, addr = self.socket.recvfrom(MSS)
-        parsed_data = data.split(b'|')
-        print(parsed_data)
-        if (parsed_data[0].decode("utf-8") == "size"):
-            file_size = os.path.getsize('./'+self.address+'/'+parsed_data[1].decode("utf-8"))
-            response = f"sizeof|{parsed_data[1]}|{file_size}".encode()
-            print("Send file size")
-        else:
-            bytes_ = self.get_file_packet(parsed_data[1], int(parsed_data[0]))
-            response = f"{parsed_data[0]}|{bytes_}".encode()
-            
-        self.socket.sendto(response, (addr))
+        if (data):
+            parsed_data = data.split(b'|')
+            if (parsed_data[0].decode("utf-8") == "size"):
+                file_size = math.ceil(os.path.getsize('./'+self.address+'/'+parsed_data[1].decode("utf-8")) / MSS)
+                response = f"sizeof|{file_size}".encode()
+            else:
+                bytes_ = self.get_file_packet(parsed_data[1].decode("utf-8"), int(parsed_data[0].decode("utf-8")))
+                response = parsed_data[0] + b'|' + bytes_
+                
+            self.socket.sendto(response, (addr))
     
     def get_file_packet(self, file_name, packet_number):
         if not os.path.exists('./'+self.address+'/'+file_name):
@@ -109,7 +105,7 @@ class Peer:
             raise Exception("There are no any available peers")
         
         self.get_file_size(peers, filename)
-        total_packets = self.get_file_size(peers, filename)
+        total_packets = self.files_size[filename]
 
         current_packet = 0
         while (current_packet < self.files_size[filename]):
@@ -128,7 +124,7 @@ class Peer:
                 threads = []
                 for pkt_num in missing:
                     t = threading.Thread(target=self.thread_function,
-                                        args=(peers, pkt_num))
+                                        args=(peers, pkt_num, filename))
                     t.start()
                     threads.append(t)
 
@@ -137,6 +133,8 @@ class Peer:
 
             self.write_file(packet_map, filename)
             current_packet += len(packet_map)
+            if (current_packet == total_packets):
+                break
 
     def thread_function(self, peers: list, packet_number: int, filename: str):
         peer_ip, peer_port = peers[randint(0, len(peers) - 1)].split(":")
@@ -149,6 +147,7 @@ class Peer:
 
             data, _ = self.socket.recvfrom(PACKET_SIZE)
             parsed_data = data.split(b'|')
+            print(parsed_data)
             received_number = -1
             if (parsed_data):
                 received_number = int(parsed_data[0].decode("utf-8"))
@@ -188,4 +187,4 @@ if __name__ == '__main__':
     else:
         while (True):
             peer.send_packet()
-            peer.sett
+            time.sleep(2)
