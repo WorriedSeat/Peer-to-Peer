@@ -3,7 +3,7 @@ import os
 import threading
 from random import randint
 import argparse
-import dht
+import dht_node
 IP = "0.0.0.0"
 MSS = 1024
 
@@ -19,7 +19,7 @@ class Peer:
         self.socket.bind((IP, port))
         self.socket.listen()
         
-        self.node = dht.DHT(IP, dht_port)
+        self.node = dht_node.DHT(IP, dht_port)
         
         if os.path.isdir('./'+self.address):
             all_file_names = os.listdir('./'+self.address)
