@@ -102,6 +102,7 @@ class DHTNode:
             if msg[0] == "PING":
                 self.socket.sendto(b"PONG", addr)
             elif msg[0] == "FIND_NODE":
+                # print("Find node", self.port)
                 target_id = bytes.fromhex(msg[1])
                 sender_id = bytes.fromhex(msg[2])
                 self.update_routing_table(sender_id, addr[0], addr[1])
@@ -109,19 +110,35 @@ class DHTNode:
                 response = "NODES|" + "|".join([f"{nid.hex()}:{ip}:{port}" for nid, (ip, port) in closest])
                 self.socket.sendto(response.encode(), addr)
             elif msg[0] == "NODES":
+                # print("Nodes", self.port)
                 for node_info in msg[1:]:
                     nid_hex, ip, port = node_info.split(':')
                     nid = bytes.fromhex(nid_hex)
                     self.update_routing_table(nid, ip, port)
             elif msg[0] == "STORE":
-                file_hash = sha1(msg[1]).digest()
+                # print("Store", self.port)
+                file_hash = bytes.fromhex(msg[1])
                 peer_ip, peer_port = msg[2].split(':')
                 self.store_peer(file_hash, peer_ip, peer_port)
             elif msg[0] == "FIND_PEERS":
-                file_hash = sha1(msg[1]).digest()
+                # print("Find Peers", self.port)
+                file_hash = bytes.fromhex(msg[1])
+                sender_id = bytes.fromhex(msg[2])
+                self.update_routing_table(sender_id, addr[0], addr[1])
+                    
                 peers = self.get_peers(file_hash)
-                response = "PEERS|" + "|".join([f"{p.ip}:{p.port}" for p in peers])
+                if len(peers) > 0:
+                    response = "PEERS|" + file_hash.hex() + "|" + "|".join([f"{p.ip}:{p.port}" for p in peers])
+                else:
+                    closest = self.find_closest_nodes(file_hash, 3)  # 3 - num of closest nodes
+                    response = "NODES|" + "|".join([f"{nid.hex()}:{ip}:{port}" for nid, (ip, port) in closest])
                 self.socket.sendto(response.encode(), addr)
+            elif msg[0] == "PEERS":
+                # print("Peers", self.port)
+                file_hash = bytes.fromhex(msg[1])
+                for p in msg[2:]:
+                    peer_ip, peer_port = p.split(':')
+                    self.store_peer(file_hash, peer_ip, peer_port)
         except Exception as e:
             # Logs
             print(f"Error handling message from {addr}: {e}")
@@ -132,7 +149,7 @@ class DHTNode:
         all_nodes = []
         for n in self.routing_table.keys():
             node = self.routing_table[n]
-            all_nodes.append((node.id, (node.ip, node.port)))
+            all_nodes.append((node.id, (node.ip, int(node.port))))
         
         # Include self in candidates
         all_nodes.append((self.node_id, (self.ip, self.port)))
@@ -163,7 +180,10 @@ class DHTNode:
 
     def get_peers(self, file_hash):
         self.cleanup_storage()
-        return self.storage[file_hash]
+        if file_hash in self.storage:
+            return self.storage[file_hash]
+        else:
+            return []
 
     def cleanup_storage(self):
         now = time()
@@ -171,8 +191,32 @@ class DHTNode:
             self.storage[file_hash] = [p for p in self.storage[file_hash] if now - p.last_seen < CLEANUP_REFRESH_INTERVAL]
             if len(self.storage[file_hash]) == 0:
                 self.storage.pop(file_hash)
+    
+    # DHT Lookup
+    def find_peers(self, file_name):
+        file_hash = sha1(file_name.encode()).digest()
+        contacted = set()
+        while True:
+            new_messages = 0
+            closest_nodes = self.find_closest_nodes(file_hash, 3)
+            for node_id, addr in closest_nodes:
+                if addr not in contacted:
+                    self.socket.sendto(f"FIND_PEERS|{file_hash.hex()}|{self.node_id.hex()}".encode(), addr)
+                    msg = f"FIND_PEERS|{file_hash.hex()}|{self.node_id.hex()}".split("|")
+                    contacted.add(addr)
+                    new_messages += 1
+            if new_messages == 0:
+                break
+            sleep(2)
+        
+        peers = []
+        if file_hash in self.storage: 
+            for p in self.storage[file_hash]:
+                peers.append((p.ip, p.port))
+        return peers
 
-    def announce_peer(self, file_hash, ip, port):
+    def announce_peer(self, file_name, ip, port):
+        file_hash = sha1(file_name.encode()).digest()
         for node in self.find_closest_nodes(file_hash, 3):
             self.socket.sendto(f"STORE|{file_hash.hex()}|{ip}:{port}".encode(), node[1])
 
@@ -222,6 +266,35 @@ if __name__ == "__main__":
     for n in node2.routing_table.keys():
         node = node2.routing_table[n]
         print(f"- {node.id.hex()[:8]} at {node.ip}:{node.port}")
+    
+    # Announcing peers
+    node2.announce_peer("file_name", "127.0.0.1", "6884")
+    node1.announce_peer("file_name2", "127.0.0.1", "6885")
+
+    sleep(5)
+
+    # Now what files they know
+    print("\nBootstrap node knows about:")
+    for s in bootstrap.storage.keys():
+        print(s.hex())
+        for i in bootstrap.storage[s]:
+            print(f"- {i.ip}:{i.port}")
+
+    print("\nNode1 knows about:")
+    for s in node1.storage.keys():
+        print(s.hex())
+        for i in node1.storage[s]:
+            print(f"- {i.ip}:{i.port}")
+    
+    print("\nNode2 knows about:")
+    for s in node2.storage.keys():
+        print(s.hex())
+        for i in node2.storage[s]:
+            print(f"- {i.ip}:{i.port}")
+    
+    # Find peers for file 2
+    print("\nNode1 finds file 'file_name2'")
+    print(node1.find_peers("file_name2"))
 
     # Clean up
     sleep(5)
