@@ -47,26 +47,24 @@ class Peer:
     
     def get_file_size(self, peers: list, filename: str):
         file_size = -1
+        print("Inside get_file_size")
         counter = 0
         while (file_size == -1):
-            peer_ip, peer_port = peers[randint(0, len(peers) - 1)].split(":")
+            # peer_ip, peer_port = peers[randint(0, len(peers) - 1)].split(":")
+            peer_ip, peer_port = "0.0.0.0", "5000"
             peer_port = int(peer_port)
-            try:
-                request = f"size|{filename}".encode()
-                self.socket.sendto(request, (peer_ip, peer_port))
-                self.socket.settimeout(2)
+            request = f"size|{filename}".encode()
+            self.socket.sendto(request, (peer_ip, peer_port))
 
-                data, _ = self.socket.recvfrom(PACKET_SIZE)
-                if (data):
-                    parsed_data = data.split(b'|')
+            data, _ = self.socket.recvfrom(PACKET_SIZE)
+            if (data):
+                print("Inside data")
+                parsed_data = data.split(b'|')
 
-                    if (parsed_data[0].decode("utf-8") == "sizeof"):
-                        received_filename = parsed_data[1].decode("utf-8")
-                        file_size = int(parsed_data[2].decode("utf-8"))
-                        self.files_size[received_filename] = file_size
-
-            except Exception as e:
-                print(f"Thread error: {e}")
+                if (parsed_data[0].decode("utf-8") == "sizeof"):
+                    received_filename = parsed_data[1].decode("utf-8")
+                    file_size = int(parsed_data[2].decode("utf-8"))
+                    self.files_size[received_filename] = file_size
             
             counter += 1
             if (counter == 1000):
@@ -76,17 +74,18 @@ class Peer:
 
        
     def send_packet(self):
-        packet, reciever_address = self.socket.recvfrom(MSS)
-        packet_as_list = str(packet, encoding='utf8').split('|')
-        
-        if packet_as_list[0] == 'size':
-            file_size = os.path.getsize('./'+self.address+'/'+packet_as_list[1])
-            response = f"sizeof|{packet_as_list[1]}|{file_size}".encode()
+        data, addr = self.socket.recvfrom(MSS)
+        parsed_data = data.split(b'|')
+        print(parsed_data)
+        if (parsed_data[0].decode("utf-8") == "size"):
+            file_size = os.path.getsize('./'+self.address+'/'+parsed_data[1].decode("utf-8"))
+            response = f"sizeof|{parsed_data[1]}|{file_size}".encode()
+            print("Send file size")
         else:
-            bytes_ = self.get_file_packet(packet_as_list[1], int(packet_as_list[0]))
-            response = f"{packet_as_list[0]}|{bytes_}".encode()
+            bytes_ = self.get_file_packet(parsed_data[1], int(parsed_data[0]))
+            response = f"{parsed_data[0]}|{bytes_}".encode()
             
-        self.socket.sendto(response, (reciever_address))
+        self.socket.sendto(response, (addr))
     
     def get_file_packet(self, file_name, packet_number):
         if not os.path.exists('./'+self.address+'/'+file_name):
@@ -104,13 +103,13 @@ class Peer:
     # def get_peers(self, file_name):
     #     return self.node.get_peers() #XXX имя файла передавать
 
-    def download_file(self, filename: str, total_packets: int):
-        test = Peer(5000, 1000)
-        peers = [test]
+    def download_file(self, filename: str):
+        peers = ["0.0.0.0:5000"]
         if (len(peers) == 0):
             raise Exception("There are no any available peers")
         
         self.get_file_size(peers, filename)
+        total_packets = self.get_file_size(peers, filename)
 
         current_packet = 0
         while (current_packet < self.files_size[filename]):
@@ -181,9 +180,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('peer_port', type=int)
     parser.add_argument('dht_port', type=int)
+    parser.add_argument('--file', type=str, required=False)
     args = parser.parse_args()
     peer = Peer(args.peer_port, args.dht_port)
-    
-    # peer.runner()
-    
-    peer.write_file({3:'tretie'.encode(), 1:"pervoe".encode(), 4:'fourth'.encode(), 2:'vtoroe'.encode()}, 'joke.txt')
+    if (args.peer_port != 5000):
+        peer.download_file(args.file)
+    else:
+        while (True):
+            peer.send_packet()
+            peer.sett
