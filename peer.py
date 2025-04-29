@@ -3,7 +3,7 @@ import os
 import threading
 from random import randint
 import argparse
-import dht_node
+# import DHT_node
 IP = "0.0.0.0"
 MSS = 1024
 
@@ -15,12 +15,12 @@ def thread_function(conn, addr):
 class Peer:
     def __init__(self, port: int, dht_port: int):
         self.address = IP+':'+str(port)
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind((IP, port))
-        self.socket.listen()
-        self.node = dht_node.DHT(IP, dht_port)
-        self.node.start()
-        self.node.bootstrap(self.get_dht())
+        
+        # self.node = DHT_node.DHT(IP, dht_port)
+        # self.node.start()
+        # self.node.bootstrap(self.get_dht())
         
         if os.path.isdir('./'+self.address):
             all_file_names = os.listdir('./'+self.address)
@@ -28,7 +28,8 @@ class Peer:
                 if os.path.isdir('./'+self.address+'/'+file):
                     print(f'Found directory (will not be sent): {file}')
                 else:
-                    self.node.announce(file)
+                    print(f"Announcing existing file {file}")
+                    # self.node.announce(file)
     
     def get_dht(self):
         actual_dht = []
@@ -46,10 +47,10 @@ class Peer:
     def get_packet(self):
         pass
 
-    def get_peers(self):
-        return self.node.get_peers()
+    # def get_peers(self):
+    #     return self.node.get_peers() #XXX имя файла передавать
     
-    def download_file(self):
+    def download_file(self): #XXX имя файла тоже передавать
         peers = self.get_peers()
         if (len(peers) == 0):
             raise Exception("There are no any available peers")
@@ -60,6 +61,14 @@ class Peer:
             x.start()
 
 
+    def write_file(self, packets:dict, file_name:str):
+        keys = list(packets.keys())
+        keys.sort()
+        
+        with open('./'+self.address+'/'+file_name, mode='ab' if os.path.exists('./'+self.address+'/'+file_name) else 'wb') as file:
+            for key in keys:
+                file.write(packets.get(key))
+        
 
 
 if __name__ == '__main__':
@@ -67,4 +76,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('port', type=int)
     args = parser.parse_args()
-    example_peer = Peer(args.port)
+    example_peer = Peer(args.port, 1000)
+    
+    example_peer.write_file({3:'tretie'.encode(), 1:"pervoe".encode(), 4:'fourth'.encode(), 2:'vtoroe'.encode()}, 'joke.txt')
