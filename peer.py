@@ -7,18 +7,38 @@ import dht
 IP = "0.0.0.0"
 MSS = 1024
 
+
+def thread_function(conn, addr):
+    with conn:
+        print(f"Connected by {addr}")
+        while True:
+            data = conn.recv(MSS)
+            if not data:
+                break
+            decoded_data = data.decode("utf-8")
+            if (decoded_data == "ready"):
+                with lock:
+                    mean = counter / threads if threads != 0 else 0
+                conn.send(f"{mean}".encode("utf-8"))
+                break  # End this client connection
+            else:
+                try:
+                    number = int(decoded_data)
+                    with lock:
+                        threads += 1
+                        counter += number
+                except ValueError:
+                    print(f"Invalid number received: {decoded_data}")
+
+
 class Peer:
     def __init__(self, port: int, dht_port: int):
         self.address = IP+':'+str(port)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((IP, port))
+        self.socket.listen()
         
         self.node = dht.DHT(IP, dht_port)
-
-        if len(self.actual_dhts) == 0:
-            raise ValueError("No DHTs avaliable found")
-        
-        self.dht = self.actual_dhts[randint(0, len(self.actual_dhts)-1)]
         
         if os.path.isdir('./'+self.address):
             all_file_names = os.listdir('./'+self.address)
@@ -49,14 +69,17 @@ class Peer:
 
     def get_peers(self):
         return self.node.get_peers()
-
+    
     def download_file(self):
         peers = self.get_peers()
         if (len(peers) == 0):
             raise Exception("There are no any available peers")
         
-        while True:
-            data, addr = self.socket.recvfrom(MSS)
+        while (True):
+            conn, addr = self.socket.accept()
+            x = threading.Thread(target=thread_function, args=(conn, addr))
+            x.start()
+
 
 
 
