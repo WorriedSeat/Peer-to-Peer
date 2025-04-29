@@ -4,28 +4,33 @@ import threading
 from random import randint
 import argparse
 import math
-import time
+from datetime import datetime
+import DHT_node
 
-# import DHT_node
 IP = "0.0.0.0"
 MSS = 1024
 PACKET_SIZE = MSS
 PACKETS_PER_BATCH = 10
 
+WELL_KNOWN_NODES_PORTS = [6881, 6882]
+
 packet_map_lock = threading.Lock()
 packet_map = {}
 
+def log_time():
+    return datetime.now().replace(microsecond=0).isoformat(sep=" ")
 
 class Peer:
     def __init__(self, port: int, dht_port: int):
+        self.port = port
         self.address = IP+':'+str(port)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind((IP, port))
         self.files_size = {}
         
-        # self.node = DHT_node.DHT(IP, dht_port)
-        # self.node.start()
-        # self.node.bootstrap(self.get_dht())
+        self.node = DHT_node.DHTNode(IP, dht_port)
+        self.node.start()
+        self.node.bootstrap(self.get_dht())
         
         if os.path.isdir('./'+self.address):
             all_file_names = os.listdir('./'+self.address)
@@ -34,26 +39,29 @@ class Peer:
                     print(f'Found directory (will not be sent): {file}')
                 else:
                     print(f"Announcing existing file {file}")
-                    # self.node.announce(file)
-    
-    def runner(self):
-        pass
+                    self.node.announce_peer(file, IP, port)
     
     def get_dht(self):
-        actual_dht = []
+        parsed_addr = []
         try:
-            with open("./main_dht_addresses.txt", "r") as file:
+            with open("./well_known_nodes.txt", "r") as file:
+                actual_dht = []
                 actual_dht = file.read().splitlines()
+                for dht_addr in actual_dht:
+                    ip, port = dht_addr[1:-1].split(',')
+                    dht_addr = (ip[1:-1], int(port[1:]))
+                    parsed_addr.append(dht_addr)
+
         except Exception as e:
             print(f"Error in get_dht {e}")
-        return actual_dht
+        
+        return parsed_addr
     
     def get_file_size(self, peers: list, filename: str):
         file_size = -1
         counter = 0
         while (file_size == -1):
-            # peer_ip, peer_port = peers[randint(0, len(peers) - 1)].split(":")
-            peer_ip, peer_port = "0.0.0.0", "5000"
+            peer_ip, peer_port = peers[randint(0, len(peers) - 1)]
             peer_port = int(peer_port)
             request = f"size|{filename}".encode()
             self.socket.sendto(request, (peer_ip, peer_port))
@@ -69,7 +77,6 @@ class Peer:
             if (counter == 1000):
                 raise Exception(f"Impossible to get {filename} size")
             
-       
     def send_packet(self):
         data, addr = self.socket.recvfrom(MSS)
         if (data):
@@ -91,15 +98,9 @@ class Peer:
             file.seek(MSS * packet_number)
             bytes_ = file.read(MSS)
             return bytes_
-        
-    def get_packet(self):
-        pass
-
-    # def get_peers(self, file_name):
-    #     return self.node.get_peers() #XXX имя файла передавать
 
     def download_file(self, filename: str):
-        peers = ["0.0.0.0:5000"]
+        peers = self.node.find_peers(filename)
         if (len(peers) == 0):
             raise Exception("There are no any available peers")
         
@@ -132,9 +133,11 @@ class Peer:
 
             self.write_file(packet_map, filename)
             current_packet += len(packet_map)
+        
+        self.node.announce_peer(filename, IP, self.port)
 
     def thread_function(self, peers: list, packet_number: int, filename: str):
-        peer_ip, peer_port = peers[randint(0, len(peers) - 1)].split(":")
+        peer_ip, peer_port = peers[randint(0, len(peers) - 1)]
         peer_port = int(peer_port)
 
         try:
@@ -153,18 +156,12 @@ class Peer:
         except Exception as e:
             print(f"Thread error: {e}")
 
-
     def write_file(self, packets:dict, file_name:str):
         keys = list(packets.keys())
         keys.sort()
-        print(keys)
-
-        if os.path.exists('./'+self.address+'/'+file_name):
-            mode = 'ab'
-        else:
-            mode='wb'
-            if not os.path.exists('./'+self.address):
-                os.makedirs('./' + self.address)
+        
+        if not os.path.exists('./'+self.address):
+            os.makedirs('./' + self.address)
         
         if (keys[0] == 0):
             file = open('./'+self.address+'/'+file_name, mode='w')
@@ -174,18 +171,34 @@ class Peer:
 
         for key in keys:
             file.write(packets[key][len(str(key)) + 1:])
-        file.close()
-        
-if __name__ == '__main__':
+        file.close()    
 
+if __name__ == '__main__':
+    
     parser = argparse.ArgumentParser()
     parser.add_argument('peer_port', type=int)
     parser.add_argument('dht_port', type=int)
     parser.add_argument('--file', type=str, required=False)
+    
+    if not os.path.exists('./well_known_nodes.txt'):
+        well_known_nodes = []
+        with open('./well_known_nodes.txt', 'w') as file:
+            for port in WELL_KNOWN_NODES_PORTS:
+                addr = (IP, port)
+                bootstrap = DHT_node.DHTNode(IP, port)
+                bootstrap.start()
+                if len(well_known_nodes) > 1:
+                    bootstrap.bootstrap(well_known_nodes)
+                
+                well_known_nodes.append(addr)
+                file.write(f"{addr}\n")
+                
+                print(f"[{log_time()}]Created well-known node {IP}:{port}")
+    
     args = parser.parse_args()
     peer = Peer(args.peer_port, args.dht_port)
-    if (args.peer_port != 5000):
-        peer.download_file(args.file)
-    else:
-        while (True):
+    if not args.file:
+        while True:
             peer.send_packet()
+    else:
+        peer.download_file(args.file)
