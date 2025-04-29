@@ -8,11 +8,13 @@ IP = "0.0.0.0"
 MSS = 1024
 
 class Peer:
-    def __init__(self, port:int):
+    def __init__(self, port: int, dht_port: int):
         self.address = IP+':'+str(port)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((IP, port))
-        self.node = dht.DHT()
+        
+        self.node = dht.DHT(IP, dht_port)
+
         if len(self.actual_dhts) == 0:
             raise ValueError("No DHTs avaliable found")
         
