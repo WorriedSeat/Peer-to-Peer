@@ -18,8 +18,9 @@ class Peer:
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((IP, port))
         self.socket.listen()
-        
         self.node = dht_node.DHT(IP, dht_port)
+        self.node.start()
+        self.node.bootstrap(self.get_dht())
         
         if os.path.isdir('./'+self.address):
             all_file_names = os.listdir('./'+self.address)
@@ -27,10 +28,7 @@ class Peer:
                 if os.path.isdir('./'+self.address+'/'+file):
                     print(f'Found directory (will not be sent): {file}')
                 else:
-                    self.announce(file)
-
-    def announce(self, file_name:str):
-        ...
+                    self.node.announce(file)
     
     def get_dht(self):
         actual_dht = []
