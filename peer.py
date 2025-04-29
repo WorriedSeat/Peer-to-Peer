@@ -3,15 +3,16 @@ import os
 import threading
 from random import randint
 import argparse
-IP = 'localhost'
-
+import dht
+IP = "0.0.0.0"
+MSS = 1024
 
 class Peer:
     def __init__(self, port:int):
         self.address = IP+':'+str(port)
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((IP, port))
-        self.actual_dhts = self.get_dht()
+        self.node = dht.DHT()
         if len(self.actual_dhts) == 0:
             raise ValueError("No DHTs avaliable found")
         
@@ -24,7 +25,7 @@ class Peer:
                     print(f'Found directory (will not be sent): {file}')
                 else:
                     self.announce(file)
-        
+
     def announce(self, file_name:str):
         ...
     
@@ -43,7 +44,19 @@ class Peer:
         
     def get_packet(self):
         pass
+
+    # def get_peers(self):
+    #     return self.node.get_peers()
+
+    # def download_file(self):
+    #     peers = self.get_peers()
+    #     if (len(peers) == 0):
+    #         raise Exception("There are no any available peers")
         
+    #     while True:
+    #         data, addr = self.socket.recvfrom(MSS)
+            
+
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
