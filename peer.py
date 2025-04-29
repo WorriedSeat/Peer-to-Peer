@@ -65,7 +65,13 @@ class Peer:
         keys = list(packets.keys())
         keys.sort()
         
-        with open('./'+self.address+'/'+file_name, mode='ab' if os.path.exists('./'+self.address+'/'+file_name) else 'wb') as file:
+        if os.path.exists('./'+self.address+'/'+file_name):
+            mode = 'ab'
+        else:
+            mode='wb'
+            os.makedirs('./' + self.address)
+        
+        with open('./'+self.address+'/'+file_name, mode=mode) as file:
             for key in keys:
                 file.write(packets.get(key))
         
