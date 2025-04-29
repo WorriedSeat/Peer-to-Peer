@@ -3,6 +3,7 @@ import os
 import threading
 from random import randint
 import argparse
+import math
 # import DHT_node
 IP = "0.0.0.0"
 MSS = 1024
@@ -43,17 +44,34 @@ class Peer:
             print(f"Error in get_dht {e}")
         return actual_dht
        
-    def send_packet(self, number_of_packet:int):
-        pass
+    def send_packet(self):
+        packet, reciever_address = self.socket.recvfrom(MSS)
+        packet_as_list = str(packet, encoding='utf8').split('|')
+        
+        if packet_as_list[0] == 'size':
+            file_size = os.path.getsize('./'+self.address+'/'+packet_as_list[1])
+            response = f"sizeof|{packet_as_list[1]}|{file_size}".encode()
+        else:
+            bytes_ = self.get_file_packet(packet_as_list[1], int(packet_as_list[0]))
+            response = f"{packet_as_list[0]}|{bytes_}".encode()
+            
+        self.socket.sendto(response, (reciever_address))
+    
+    def get_file_packet(self, file_name, packet_number):
+        if not os.path.exists('./'+self.address+'/'+file_name):
+            raise NameError(f"Peer {self.address} don't have file {file_name}")
+        
+        with open('./'+self.address+'/'+file_name, 'rb') as file:
+            for i in range(math.ceil(os.path.getsize('./'+self.address+'/'+file_name) / MSS)):
+                bytes_ = file.read(MSS)
+                if i == packet_number:
+                    return bytes_
         
     def get_packet(self):
         pass
 
     # def get_peers(self, file_name):
     #     return self.node.get_peers() #XXX имя файла передавать
-    
-    def send_file(self, file_name:str):
-        pass
 
     def download_file(self, file_name:str): #XXX имя файла тоже передавать
         peers = self.get_peers(file_name)
