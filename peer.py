@@ -44,6 +44,36 @@ class Peer:
         except Exception as e:
             print(f"Error in get_dht {e}")
         return actual_dht
+    
+    def get_file_size(self, peers: list, filename: str):
+        file_size = -1
+        counter = 0
+        while (file_size == -1):
+            peer_ip, peer_port = peers[randint(0, len(peers) - 1)].split(":")
+            peer_port = int(peer_port)
+            try:
+                request = f"size|{filename}".encode()
+                self.socket.sendto(request, (peer_ip, peer_port))
+                self.socket.settimeout(2)
+
+                data, _ = self.socket.recvfrom(PACKET_SIZE)
+                if (data):
+                    parsed_data = data.split(b'|')
+
+                    if (parsed_data[0].decode("utf-8") == "sizeof"):
+                        received_filename = parsed_data[1].decode("utf-8")
+                        file_size = int(parsed_data[2].decode("utf-8"))
+                        self.files_size[received_filename] = file_size
+
+            except Exception as e:
+                print(f"Thread error: {e}")
+            
+            counter += 1
+            if (counter == 1000):
+                raise Exception(f"Impossible to get {filename} size")
+            
+    
+
        
     def send_packet(self):
         packet, reciever_address = self.socket.recvfrom(MSS)
@@ -74,15 +104,63 @@ class Peer:
     # def get_peers(self, file_name):
     #     return self.node.get_peers() #XXX имя файла передавать
 
-    def download_file(self, file_name:str): #XXX имя файла тоже передавать
-        peers = self.get_peers(file_name)
+    def download_file(self, filename: str, total_packets: int):
+        test = Peer(5000, 1000)
+        peers = [test]
         if (len(peers) == 0):
             raise Exception("There are no any available peers")
         
-        while (True):
-            conn, addr = self.socket.accept()
-            x = threading.Thread(target=thread_function, args=(conn, addr))
-            x.start()
+        self.get_file_size(peers, filename)
+
+        current_packet = 0
+        while (current_packet < self.files_size[filename]):
+            with packet_map_lock:
+                packet_map.clear()
+
+            expected_packets = set(range(current_packet, min(current_packet + PACKETS_PER_BATCH, total_packets)))
+
+            while True:
+                with packet_map_lock:
+                    missing = expected_packets - set(packet_map.keys())
+
+                if not missing:
+                    break
+
+                threads = []
+                for pkt_num in missing:
+                    t = threading.Thread(target=self.thread_function,
+                                        args=(peers, pkt_num))
+                    t.start()
+                    threads.append(t)
+
+                for t in threads:
+                    t.join()
+
+            self.write_file(packet_map, filename)
+            current_packet += len(packet_map)
+
+    def thread_function(self, peers: list, packet_number: int, filename: str):
+        peer_ip, peer_port = peers[randint(0, len(peers) - 1)].split(":")
+        peer_port = int(peer_port)
+
+        try:
+            request = f"{packet_number}|{filename}".encode()
+            self.socket.sendto(request, (peer_ip, peer_port))
+            self.socket.settimeout(2)
+
+            data, _ = self.socket.recvfrom(PACKET_SIZE)
+            parsed_data = data.split(b'|')
+            received_number = -1
+            if (parsed_data):
+                received_number = int(parsed_data[0].decode("utf-8"))
+
+            packet_data = parsed_data[1]
+
+            with packet_map_lock:
+                packet_map[received_number] = packet_data
+        except Exception as e:
+            print(f"Thread error: {e}")
+
 
     def write_file(self, packets:dict, file_name:str):
         keys = list(packets.keys())
