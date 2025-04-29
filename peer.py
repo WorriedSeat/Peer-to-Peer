@@ -31,6 +31,9 @@ class Peer:
                     print(f"Announcing existing file {file}")
                     # self.node.announce(file)
     
+    def runner(self):
+        pass
+    
     def get_dht(self):
         actual_dht = []
         try:
@@ -39,19 +42,21 @@ class Peer:
         except Exception as e:
             print(f"Error in get_dht {e}")
         return actual_dht
-        
-    
+       
     def send_packet(self, number_of_packet:int):
         pass
         
     def get_packet(self):
         pass
 
-    # def get_peers(self):
+    # def get_peers(self, file_name):
     #     return self.node.get_peers() #XXX имя файла передавать
     
-    def download_file(self): #XXX имя файла тоже передавать
-        peers = self.get_peers()
+    def send_file(self, file_name:str):
+        pass
+
+    def download_file(self, file_name:str): #XXX имя файла тоже передавать
+        peers = self.get_peers(file_name)
         if (len(peers) == 0):
             raise Exception("There are no any available peers")
         
@@ -59,7 +64,6 @@ class Peer:
             conn, addr = self.socket.accept()
             x = threading.Thread(target=thread_function, args=(conn, addr))
             x.start()
-
 
     def write_file(self, packets:dict, file_name:str):
         keys = list(packets.keys())
@@ -75,13 +79,14 @@ class Peer:
             for key in keys:
                 file.write(packets.get(key))
         
-
-
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('port', type=int)
+    parser.add_argument('peer_port', type=int)
+    parser.add_argument('dht_port', type=int)
     args = parser.parse_args()
-    example_peer = Peer(args.port, 1000)
+    peer = Peer(args.peer_port, args.dht_port)
     
-    example_peer.write_file({3:'tretie'.encode(), 1:"pervoe".encode(), 4:'fourth'.encode(), 2:'vtoroe'.encode()}, 'joke.txt')
+    # peer.runner()
+    
+    peer.write_file({3:'tretie'.encode(), 1:"pervoe".encode(), 4:'fourth'.encode(), 2:'vtoroe'.encode()}, 'joke.txt')
