@@ -6,8 +6,9 @@ from random import random, choice
 
 
 PARALLEL_REQUESTS = 3 # Requests parallelization
-REFRESH_INTERVAL = 30  # Seconds
+ROUTING_REFRESH_INTERVAL = 1800  # Refreshing routing table
 ROUTING_TABLE_SIZE = 10 # Number of records in routing tables
+CLEANUP_REFRESH_INTERVAL = 1800 # Refreshing storage
 
 
 # Info about dht nodes
@@ -18,6 +19,17 @@ class DHTNodeInfo:
         self.last_seen = time()
         self.distance = distance
         self.id = id
+    
+    def ping(self):
+        self.last_seen = time()
+
+
+# Info about peers
+class PeerInfo:
+    def __init__(self, ip, port):
+        self.ip = ip
+        self.port = port
+        self.last_seen = time()
     
     def ping(self):
         self.last_seen = time()
@@ -105,6 +117,11 @@ class DHTNode:
                 file_hash = sha1(msg[1]).digest()
                 peer_ip, peer_port = msg[2].split(':')
                 self.store_peer(file_hash, peer_ip, peer_port)
+            elif msg[0] == "FIND_PEERS":
+                file_hash = sha1(msg[1]).digest()
+                peers = self.get_peers(file_hash)
+                response = "PEERS|" + "|".join([f"{p.ip}:{p.port}" for p in peers])
+                self.socket.sendto(response.encode(), addr)
         except Exception as e:
             # Logs
             print(f"Error handling message from {addr}: {e}")
@@ -113,7 +130,8 @@ class DHTNode:
     def find_closest_nodes(self, target_id, count):
         # Collect all nodes
         all_nodes = []
-        for node in self.routing_table.values():
+        for n in self.routing_table.keys():
+            node = self.routing_table[n]
             all_nodes.append((node.id, (node.ip, node.port)))
         
         # Include self in candidates
@@ -132,14 +150,44 @@ class DHTNode:
     def find_node(self, target_id, addr):
         self.socket.sendto(f"FIND_NODE|{target_id.hex()}|{self.node_id.hex()}".encode(), addr)
 
+    # Update or add peer info:
+    def store_peer(self, file_hash, ip, port):
+        if file_hash in self.storage:
+            for p in self.storage[file_hash]:
+                if p.ip == ip and p.port == port:
+                    p.ping()
+                    return
+        else:
+            self.storage[file_hash] = []
+        self.storage[file_hash].append(PeerInfo(ip, port))
+
+    def get_peers(self, file_hash):
+        self.cleanup_storage()
+        return self.storage[file_hash]
+
+    def cleanup_storage(self):
+        now = time()
+        for file_hash in self.storage.keys():
+            self.storage[file_hash] = [p for p in self.storage[file_hash] if now - p.last_seen < CLEANUP_REFRESH_INTERVAL]
+            if len(self.storage[file_hash]) == 0:
+                self.storage.pop(file_hash)
+
+    def announce_peer(self, file_hash, ip, port):
+        for node in self.find_closest_nodes(file_hash, 3):
+            self.socket.sendto(f"STORE|{file_hash.hex()}|{ip}:{port}".encode(), node[1])
+
     # Periodically refresh routing table
     def refresh(self):
         while self.running:
-            sleep(REFRESH_INTERVAL)
+            sleep(ROUTING_REFRESH_INTERVAL)
             # Refresh a random node
             rnd_node = self.routing_table[choice(self.routing_table.keys())]
             self.find_node(rnd_node.id, (rnd_node.ip, rnd_node.port))
-
+    
+    # Stop running of dht node
+    def shutdown(self): 
+        self.running = False
+        self.socket.close()
 
 # --- Example Usage ---
 if __name__ == "__main__":
@@ -177,9 +225,6 @@ if __name__ == "__main__":
 
     # Clean up
     sleep(5)
-    bootstrap.running = False
-    node1.running = False
-    node2.running = False
-    bootstrap.socket.close()
-    node1.socket.close()
-    node2.socket.close()
+    bootstrap.shutdown()
+    node1.shutdown()
+    node2.shutdown()
