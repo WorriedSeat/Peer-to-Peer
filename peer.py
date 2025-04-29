@@ -80,7 +80,7 @@ class Peer:
             else:
                 bytes_ = self.get_file_packet(parsed_data[1].decode("utf-8"), int(parsed_data[0].decode("utf-8")))
                 response = parsed_data[0] + b'|' + bytes_
-                
+
             self.socket.sendto(response, (addr))
     
     def get_file_packet(self, file_name, packet_number):
@@ -88,10 +88,9 @@ class Peer:
             raise NameError(f"Peer {self.address} don't have file {file_name}")
         
         with open('./'+self.address+'/'+file_name, 'rb') as file:
-            for i in range(math.ceil(os.path.getsize('./'+self.address+'/'+file_name) / MSS)):
-                bytes_ = file.read(MSS)
-                if i == packet_number:
-                    return bytes_
+            file.seek((MSS - 5) * packet_number)
+            bytes_ = file.read(MSS - 5)
+            return bytes_
         
     def get_packet(self):
         pass
@@ -133,8 +132,6 @@ class Peer:
 
             self.write_file(packet_map, filename)
             current_packet += len(packet_map)
-            if (current_packet == total_packets):
-                break
 
     def thread_function(self, peers: list, packet_number: int, filename: str):
         peer_ip, peer_port = peers[randint(0, len(peers) - 1)].split(":")
@@ -143,11 +140,9 @@ class Peer:
         try:
             request = f"{packet_number}|{filename}".encode()
             self.socket.sendto(request, (peer_ip, peer_port))
-            self.socket.settimeout(2)
 
             data, _ = self.socket.recvfrom(PACKET_SIZE)
             parsed_data = data.split(b'|')
-            print(parsed_data)
             received_number = -1
             if (parsed_data):
                 received_number = int(parsed_data[0].decode("utf-8"))
@@ -163,16 +158,23 @@ class Peer:
     def write_file(self, packets:dict, file_name:str):
         keys = list(packets.keys())
         keys.sort()
-        
+        print(keys)
+
         if os.path.exists('./'+self.address+'/'+file_name):
             mode = 'ab'
         else:
             mode='wb'
             os.makedirs('./' + self.address)
         
-        with open('./'+self.address+'/'+file_name, mode=mode) as file:
-            for key in keys:
-                file.write(packets.get(key))
+        if (keys[0] == 0):
+            file = open('./'+self.address+'/'+file_name, mode='w')
+        file = open('./'+self.address+'/'+file_name, mode='ab')
+        for key in keys:
+            file.write(packets.get(key))
+        file.close()
+        # with open('./'+self.address+'/'+file_name, mode='') as file:
+        #     for key in keys:
+        #         file.write(packets.get(key))
         
 if __name__ == '__main__':
 
@@ -187,4 +189,3 @@ if __name__ == '__main__':
     else:
         while (True):
             peer.send_packet()
-            time.sleep(2)
