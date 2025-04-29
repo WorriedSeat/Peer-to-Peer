@@ -7,10 +7,11 @@ import math
 # import DHT_node
 IP = "0.0.0.0"
 MSS = 1024
+PACKET_SIZE = MSS
+PACKETS_PER_BATCH = 10
 
-
-def thread_function(conn, addr):
-    pass
+packet_map_lock = threading.Lock()
+packet_map = {}
 
 
 class Peer:
@@ -98,7 +99,7 @@ class Peer:
                 file.write(packets.get(key))
         
 if __name__ == '__main__':
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument('peer_port', type=int)
     parser.add_argument('dht_port', type=int)
