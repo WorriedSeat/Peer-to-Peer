@@ -4,6 +4,7 @@ import threading
 from random import randint
 import argparse
 import math
+from progress.bar import FillingSquaresBar
 from datetime import datetime
 import DHT_node
 
@@ -125,6 +126,7 @@ class Peer:
             return bytes_
 
     def download_file(self, filename: str):
+        print(f'Requested {filename}')
         peers = self.node.find_peers(filename)
         if (len(peers) == 0):
             with log_lock:
@@ -140,6 +142,7 @@ class Peer:
         self.get_file_size(peers, filename)
         total_packets = self.files_size[filename]
 
+        bar = FillingSquaresBar('Downloading', max = total_packets)
         current_packet = 0
         while (current_packet < self.files_size[filename]):
             with packet_map_lock:
@@ -164,6 +167,9 @@ class Peer:
                 for t in threads:
                     t.join()
 
+            for _ in range(PACKETS_PER_BATCH):
+                bar.next()
+            
             self.write_file(packet_map, filename)
             current_packet += len(packet_map)
         
@@ -171,7 +177,8 @@ class Peer:
             with open('./log_file.txt', 'a') as log_file:    
                 log_file.write(f"[{log_time()}] Peer {self.address} Recieved {filename}\n")
                 log_file.write(f"[{log_time()}] Peer {self.address} Announced {filename}\n")
-            
+        
+        print(f"\n{filename} successfully downloaded!")
         self.node.announce_peer(filename, IP, self.port)
 
     def thread_function(self, peers: list, packet_number: int, filename: str):

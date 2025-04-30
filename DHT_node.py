@@ -49,7 +49,7 @@ class DHTNode:
         self.socket.bind((ip, port))
         self.running = True
         # Logs
-        print(f"Node {self.node_id.hex()[:8]} running at {ip}:{port}")
+        # print(f"Node {self.node_id.hex()[:8]} running at {ip}:{port}")
     
     # Stop running dht node
     def shutdown(self): 

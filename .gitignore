@@ -175,3 +175,4 @@ cython_debug/
 
 well_known_nodes.txt
 log_file.txt
+.python-version
