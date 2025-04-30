@@ -15,6 +15,7 @@ PACKETS_PER_BATCH = 10
 WELL_KNOWN_NODES_PORTS = [6881, 6882]
 
 log_lock = threading.Lock()
+
 packet_map_lock = threading.Lock()
 packet_map = {}
 
@@ -32,12 +33,11 @@ class Peer:
         self.node = DHT_node.DHTNode(IP, dht_port)
         self.node.start()
         self.node.bootstrap(self.get_dht())
-        
+                
         with log_lock:
-            log_file = open('./log_file.txt', 'a')
-            log_file.write(f"[{log_time()}] Peer {self.address} Connected\n")
-            log_file.write(f"[{log_time()}] Peer {self.address} Created node {self.node.ip}:{self.node.port}\n")
-            log_file.close()
+            with open('./log_file.txt', 'a') as log_file:
+                log_file.write(f"[{log_time()}] Peer {self.address} Connected\n")
+                log_file.write(f"[{log_time()}] Peer {self.address} Created node {self.node.ip}:{self.node.port}\n")
         
         if os.path.isdir('./'+self.address):
             all_file_names = os.listdir('./'+self.address)
@@ -45,9 +45,8 @@ class Peer:
                 if not os.path.isdir('./'+self.address+'/'+file):
                     
                     with log_lock:
-                        log_file = open('./log_file.txt', 'a')
-                        log_file.write(f"[{log_time()}] Peer {self.address} Announcing{file}\n")
-                        log_file.close()
+                        with open('./log_file.txt', 'a') as log_file:
+                            log_file.write(f"[{log_time()}] Peer {self.address} Announced {file}\n")
                     
                     self.node.announce_peer(file, IP, port)
     
@@ -64,9 +63,8 @@ class Peer:
 
         except Exception as e:
             with log_lock:
-                log_file = open('./log_file.txt', 'a')
-                log_file.write(f"[{log_time()}] Peer {self.address} Error: {e}\n")
-                log_file.close()
+                with open('./log_file.txt', 'a') as log_file:
+                    log_file.write(f"[{log_time()}] Peer {self.address} Error: {e}\n")
                 
             print(f"Error in get_dht {e}")
         
@@ -80,11 +78,6 @@ class Peer:
             peer_port = int(peer_port)
             request = f"size|{filename}".encode()
             self.socket.sendto(request, (peer_ip, peer_port))
-
-            with log_lock:
-                log_file = open('./log_file.txt', 'a')
-                log_file.write(f"[{log_time()}] Peer {self.address} Requested {filename} size From {peer_ip}:{peer_port}\n")
-                log_file.close()
             
             data, _ = self.socket.recvfrom(PACKET_SIZE)
             if (data):
@@ -94,48 +87,35 @@ class Peer:
                     self.files_size[filename] = file_size
                 
                     with log_lock:
-                        log_file = open('./log_file.txt', 'a')
-                        log_file.write(f"[{log_time()}] Peer {self.address} Recieved {filename} size({file_size} packets) From {peer_ip}:{peer_port}\n")
-                        log_file.close()
+                        with open('./log_file.txt', 'a') as log_file:
+                            log_file.write(f"[{log_time()}] Peer {self.address} Recieved size({file_size} packets) From {peer_ip}:{peer_port}\n")
                         
             counter += 1
             if (counter == 1000):
                 with log_lock:
-                    log_file = open('./log_file.txt', 'a')
-                    log_file.write(f"[{log_time()}] Peer {self.address} Error: Impossible to get {filename} size\n")
-                    log_file.close()
+                    with open('./log_file.txt', 'a') as log_file:
+                        log_file.write(f"[{log_time()}] Peer {self.address} Error: Impossible to get {filename} size\n")
                 
                 raise Exception(f"Impossible to get {filename} size")
             
     def send_packet(self):
-        data, addr = self.socket.recvfrom(MSS)
+        data, addr = self.socket.recvfrom(MSS) 
         if (data):
             parsed_data = data.split(b'|')
             if (parsed_data[0].decode("utf-8") == "size"):
                 file_size = math.ceil(os.path.getsize('./'+self.address+'/'+parsed_data[1].decode("utf-8")) / MSS)
                 response = f"sizeof|{file_size}".encode()
-                
-                # with log_lock:
-                #     log_file = open('./log_file.txt', 'a')
-                #     log_file.write(f"[{log_time()}] Peer {self.address} Recieved request on {parsed_data[1]} size\n")
-                #     log_file.write(f"[{log_time()}] Peer {self.address} Send {parsed_data[1]} size\n")
             else:
                 bytes_ = self.get_file_packet(parsed_data[1].decode("utf-8"), int(parsed_data[0].decode("utf-8")))
                 response = bytes(f"{parsed_data[0].decode()}|", "utf-8") + bytes_
-                
-                # with log_lock:
-                #     log_file = open('./log_file.txt', 'a')
-                #     log_file.write(f"[{log_time()}] Peer {self.address} Recieved request on {parsed_data[1]} {parsed_data[0]} packet\n")
-                #     log_file.write(f"[{log_time()}] Peer {self.address} Send {parsed_data[1]} {parsed_data[0]} packet\n")
-                
             self.socket.sendto(response, (addr))
-        
+            
+                
     def get_file_packet(self, file_name, packet_number):
         if not os.path.exists('./'+self.address+'/'+file_name):
             with log_lock:
-                log_file = open('./log_file.txt', 'a')
-                log_file.write(f"[{log_time()}] Peer {self.address} Error: don't have file {file_name}\n")
-                log_file.close()
+                with open('./log_file.txt', 'a') as log_file:
+                    log_file.write(f"[{log_time()}] Peer {self.address} Error: don't have file {file_name}\n")
                 
             raise NameError(f"Peer {self.address} don't have file {file_name}")
         
@@ -148,12 +128,15 @@ class Peer:
         peers = self.node.find_peers(filename)
         if (len(peers) == 0):
             with log_lock:
-                log_file = open('./log_file.txt', 'a')
-                log_file.write(f"[{log_time()}] Peer {self.address} Error: o available peers\n")
-                log_file.close()
+                with open('./log_file.txt', 'a') as log_file:
+                    log_file.write(f"[{log_time()}] Peer {self.address} Error: No available peers\n")
                 
             raise Exception("No available peers")
         
+        with log_lock:
+            with open('./log_file.txt', 'a') as log_file:
+                log_file.write(f"[{log_time()}] Peer {self.address} Requested {filename}\n")
+            
         self.get_file_size(peers, filename)
         total_packets = self.files_size[filename]
 
@@ -184,6 +167,11 @@ class Peer:
             self.write_file(packet_map, filename)
             current_packet += len(packet_map)
         
+        with log_lock:
+            with open('./log_file.txt', 'a') as log_file:    
+                log_file.write(f"[{log_time()}] Peer {self.address} Recieved {filename}\n")
+                log_file.write(f"[{log_time()}] Peer {self.address} Announced {filename}\n")
+            
         self.node.announce_peer(filename, IP, self.port)
 
     def thread_function(self, peers: list, packet_number: int, filename: str):
@@ -194,11 +182,6 @@ class Peer:
             request = f"{packet_number}|{filename}".encode()
             self.socket.sendto(request, (peer_ip, peer_port))
                 
-            with log_lock:
-                log_file = open('./log_file.txt', 'a')    
-                log_file.write(f"[{log_time()}] Peer {self.address} Requested {filename} Packet {packet_number} From {peer_ip}:{peer_port}\n")
-                log_file.close()
-                
             data, _ = self.socket.recvfrom(PACKET_SIZE + len(str(packet_number)) + 1)
             parsed_data = data.split(b'|')
             received_number = -1
@@ -206,9 +189,8 @@ class Peer:
                 received_number = int(parsed_data[0].decode("utf-8"))
 
             with log_lock:
-                log_file = open('./log_file.txt', 'a')    
-                log_file.write(f"[{log_time()}] Peer {self.address} Recieved {filename} Packet {packet_number} From {peer_ip}:{peer_port}\n")
-                log_file.close()
+                with open('./log_file.txt', 'a') as log_file:    
+                    log_file.write(f"[{log_time()}] Peer {self.address} Recieved Packet {packet_number} From {peer_ip}:{peer_port}\n")
                 
             with packet_map_lock:
                 packet_map[received_number] = data
@@ -236,15 +218,17 @@ class Peer:
     def shutdown(self):
         self.socket.close()
         self.node.shutdown()
-        log_file.close()
+        with log_lock:
+            with open('./log_file.txt', 'a') as log_file:
+                log_file.write(f"[{log_time()}] Peer {self.address} Shut down Node {self.node.ip}:{self.node.port}\n")
+                log_file.write(f"[{log_time()}] Peer {self.address} Disconnected\n")
+        
 
 if __name__ == '__main__':
     
     if not os.path.exists('./log_file.txt'):
         open('./log_file.txt', 'w')
-    
-    # log_file = open('./log_file.txt', 'a')
-    
+        
     parser = argparse.ArgumentParser()
     parser.add_argument('peer_port', type=int)
     parser.add_argument('dht_port', type=int)
@@ -264,16 +248,14 @@ if __name__ == '__main__':
                 file.write(f"{addr}\n")
                 
                 with log_lock:
-                    log_file = open('./log_file.txt', 'a')
-                    log_file.write(f"[{log_time()}]Created well-known node {IP}:{port}\n")
-                    log_file.close()
+                    with open('./log_file.txt', 'a') as log_file:
+                        log_file.write(f"[{log_time()}] Created well-known node {IP}:{port}\n")
     
     args = parser.parse_args()
     peer = Peer(args.peer_port, args.dht_port)
+    
     if not args.file:
-        while True:
             peer.send_packet()
     else:
         peer.download_file(args.file)
-        while True:
-            peer.send_packet()
+        peer.send_packet()

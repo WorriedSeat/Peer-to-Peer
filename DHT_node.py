@@ -55,6 +55,7 @@ class DHTNode:
     def shutdown(self): 
         self.running = False
         self.socket.close()
+        exit()
 
     # Kademlia XOR distance measure
     def distance(self, id1, id2):
