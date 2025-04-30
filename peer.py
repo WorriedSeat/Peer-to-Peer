@@ -246,6 +246,7 @@ class Peer:
         file = open('./'+self.address+'/'+file_name, mode='ab')
 
         for key in keys:
+            # len(str(key)) + 1 to offset packet number and '|' symbol
             file.write(packets[key][len(str(key)) + 1:])
         file.close()
     
