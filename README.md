@@ -65,17 +65,4 @@ python peer.py 5002 6885 --file image.png
 
 **Result**  A folder '0.0.0.0:5002' will be created in the project directory and the downloaded 'image.png' file will appear in it.
 
-## How It Works
-
-1. **Peer Discovery**: 
-   - Peers broadcast their presence on the local network
-   - Maintain a list of known peers
-
-2. **File Sharing**:
-   - Each peer shares files from a designated folder
-   - File lists are exchanged between peers
-   - Files are transferred directly between peers when requested
-
-3. **Network Communication**:
-   - Uses TCP sockets for reliable communication
-   - Simple custom protocol for commands and file transfers
+ A more detailed description of the project can be found in `DNP_project.pdf`
