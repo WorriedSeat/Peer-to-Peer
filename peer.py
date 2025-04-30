@@ -255,7 +255,9 @@ if __name__ == '__main__':
     peer = Peer(args.peer_port, args.dht_port)
     
     if not args.file:
+        while True:
             peer.send_packet()
     else:
         peer.download_file(args.file)
-        peer.send_packet()
+        while True:
+            peer.send_packet()
