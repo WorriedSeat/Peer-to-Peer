@@ -49,12 +49,13 @@ class DHTNode:
         self.socket.bind((ip, port))
         self.running = True
         # Logs
-        print(f"Node {self.node_id.hex()[:8]} running at {ip}:{port}")
+        # print(f"Node {self.node_id.hex()[:8]} running at {ip}:{port}")
     
     # Stop running dht node
     def shutdown(self): 
         self.running = False
         self.socket.close()
+        exit()
 
     # Kademlia XOR distance measure
     def distance(self, id1, id2):
