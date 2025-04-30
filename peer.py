@@ -7,6 +7,7 @@ import math
 from progress.bar import FillingSquaresBar
 from datetime import datetime
 import DHT_node
+import sys
 
 IP = "0.0.0.0"
 MSS = 1024
@@ -232,7 +233,6 @@ class Peer:
         
 
 if __name__ == '__main__':
-    
     if not os.path.exists('./log_file.txt'):
         open('./log_file.txt', 'w')
         
@@ -240,7 +240,7 @@ if __name__ == '__main__':
     parser.add_argument('peer_port', type=int)
     parser.add_argument('dht_port', type=int)
     parser.add_argument('--file', type=str, required=False)
-    
+
     if not os.path.exists('./well_known_nodes.txt'):
         well_known_nodes = []
         with open('./well_known_nodes.txt', 'w') as file:
@@ -257,14 +257,22 @@ if __name__ == '__main__':
                 with log_lock:
                     with open('./log_file.txt', 'a') as log_file:
                         log_file.write(f"[{log_time()}] Created well-known node {IP}:{port}\n")
-    
+
     args = parser.parse_args()
     peer = Peer(args.peer_port, args.dht_port)
-    
-    if not args.file:
-        while True:
-            peer.send_packet()
-    else:
-        peer.download_file(args.file)
-        while True:
-            peer.send_packet()
+    try:
+        if not args.file:
+            while True:
+                peer.send_packet()
+        else:
+            peer.download_file(args.file)
+            while True:
+                peer.send_packet()
+    except KeyboardInterrupt:
+        peer.shutdown()
+        with log_lock:
+            with open('./log_file.txt', 'a') as log_file:
+                log_file.write(f"[{log_time()}] Peer {peer.address} Shut down Node {peer.node.ip}:{peer.node.port}\n")
+                log_file.write(f"[{log_time()}] Peer {peer.address} Disconnected\n")
+
+        sys.exit(0)
