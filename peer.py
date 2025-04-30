@@ -9,38 +9,49 @@ from datetime import datetime
 import DHT_node
 import sys
 
+# Configuration constants
 IP = "0.0.0.0"
 MSS = 1024
 PACKET_SIZE = MSS
 PACKETS_PER_BATCH = 10
 
+# Default bootstrap ports for DHT
 WELL_KNOWN_NODES_PORTS = [6881, 6882]
 
+# Threading locks for logging and shared data
 log_lock = threading.Lock()
-
 packet_map_lock = threading.Lock()
+
+# Stores received packets temporarily during download
 packet_map = {}
 
+# Helper function to format timestamped log entries
 def log_time():
     return datetime.now().replace(microsecond=0).isoformat(sep=" ")
 
 class Peer:
     def __init__(self, port: int, dht_port: int):
+        # Initialize the peer socket and DHT node
         self.port = port
         self.address = IP+':'+str(port)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind((IP, port))
-        self.files_size = {}
         
+        # Caches file sizes
+        self.files_size = {} 
+        
+        # Initialize and bootstrap DHT node
         self.node = DHT_node.DHTNode(IP, dht_port)
         self.node.start()
         self.node.bootstrap(self.get_dht())
-                
+        
+        # Log peer startup and node creation
         with log_lock:
             with open('./log_file.txt', 'a') as log_file:
                 log_file.write(f"[{log_time()}] Peer {self.address} Connected\n")
                 log_file.write(f"[{log_time()}] Peer {self.address} Created node {self.node.ip}:{self.node.port}\n")
         
+        # If peer has local files, announce them to the DHT
         if os.path.isdir('./'+self.address):
             all_file_names = os.listdir('./'+self.address)
             for file in all_file_names:
@@ -52,6 +63,7 @@ class Peer:
                     
                     self.node.announce_peer(file, IP, port)
     
+    # Reads well-known nodes from a text file to use for DHT bootstrap
     def get_dht(self):
         parsed_addr = []
         try:
@@ -72,6 +84,7 @@ class Peer:
         
         return parsed_addr
     
+    # Queries other peers for the size of a file in packets
     def get_file_size(self, peers: list, filename: str):
         file_size = -1
         counter = 0
@@ -100,19 +113,23 @@ class Peer:
                 
                 raise Exception(f"Impossible to get {filename} size")
             
+    # Listens for incoming packet or size requests from other peers
     def send_packet(self):
         data, addr = self.socket.recvfrom(MSS) 
         if (data):
             parsed_data = data.split(b'|')
             if (parsed_data[0].decode("utf-8") == "size"):
+                # Return file size if requested
                 file_size = math.ceil(os.path.getsize('./'+self.address+'/'+parsed_data[1].decode("utf-8")) / MSS)
                 response = f"sizeof|{file_size}".encode()
             else:
+                # Return actual data packet
                 bytes_ = self.get_file_packet(parsed_data[1].decode("utf-8"), int(parsed_data[0].decode("utf-8")))
                 response = bytes(f"{parsed_data[0].decode()}|", "utf-8") + bytes_
             self.socket.sendto(response, (addr))
             
                 
+    # Retrieves specific file packet from disk
     def get_file_packet(self, file_name, packet_number):
         if not os.path.exists('./'+self.address+'/'+file_name):
             with log_lock:
@@ -125,7 +142,8 @@ class Peer:
             file.seek(MSS * packet_number)
             bytes_ = file.read(MSS)
             return bytes_
-
+        
+    # Downloads a file by requesting packets from random peers
     def download_file(self, filename: str):
         print(f'Requested {filename}')
         peers = self.node.find_peers(filename)
@@ -145,12 +163,15 @@ class Peer:
 
         bar = FillingSquaresBar('Downloading', max = total_packets)
         current_packet = 0
+
+        # Download in batches of 10
         while (current_packet < self.files_size[filename]):
             with packet_map_lock:
                 packet_map.clear()
 
             expected_packets = set(range(current_packet, min(current_packet + PACKETS_PER_BATCH, total_packets)))
 
+            # Loop until all packets in the batch are received
             while True:
                 with packet_map_lock:
                     missing = expected_packets - set(packet_map.keys())
@@ -174,6 +195,7 @@ class Peer:
             self.write_file(packet_map, filename)
             current_packet += len(packet_map)
         
+        # Log file completion and announce to DHT
         with log_lock:
             with open('./log_file.txt', 'a') as log_file:    
                 log_file.write(f"[{log_time()}] Peer {self.address} Recieved {filename}\n")
@@ -182,6 +204,7 @@ class Peer:
         print(f"\n{filename} successfully downloaded!")
         self.node.announce_peer(filename, IP, self.port)
 
+    # Thread function to download a single packet
     def thread_function(self, peers: list, packet_number: int, filename: str):
         peer_ip, peer_port = peers[randint(0, len(peers) - 1)]
         peer_port = int(peer_port)
@@ -200,12 +223,14 @@ class Peer:
                 with open('./log_file.txt', 'a') as log_file:    
                     log_file.write(f"[{log_time()}] Peer {self.address} Recieved Packet {packet_number} From {peer_ip}:{peer_port}\n")
                 
+            # Store packet to the map where key is a packet number, value is a packet itself
             with packet_map_lock:
                 packet_map[received_number] = data
 
         except Exception as e:
             print(f"Thread error: {e}")
 
+    # Writes downloaded packets to file in correct order
     def write_file(self, packets:dict, file_name:str):
         keys = list(packets.keys())
         keys.sort()
@@ -213,6 +238,7 @@ class Peer:
         if not os.path.exists('./'+self.address):
             os.makedirs('./' + self.address)
         
+        # If it is the first backet of packets, then create a file
         if (keys[0] == 0):
             file = open('./'+self.address+'/'+file_name, mode='w')
             file.close()
@@ -223,6 +249,7 @@ class Peer:
             file.write(packets[key][len(str(key)) + 1:])
         file.close()
     
+    # Shutdown of a peer
     def shutdown(self):
         self.socket.close()
         self.node.shutdown()
@@ -233,14 +260,17 @@ class Peer:
         
 
 if __name__ == '__main__':
+    # Ensure log file exists
     if not os.path.exists('./log_file.txt'):
         open('./log_file.txt', 'w')
         
+    # Argument parser for ports and optional file request
     parser = argparse.ArgumentParser()
     parser.add_argument('peer_port', type=int)
     parser.add_argument('dht_port', type=int)
     parser.add_argument('--file', type=str, required=False)
 
+    # Create bootstrap DHT nodes if needed
     if not os.path.exists('./well_known_nodes.txt'):
         well_known_nodes = []
         with open('./well_known_nodes.txt', 'w') as file:
@@ -258,6 +288,7 @@ if __name__ == '__main__':
                     with open('./log_file.txt', 'a') as log_file:
                         log_file.write(f"[{log_time()}] Created well-known node {IP}:{port}\n")
 
+    # Create peer and either serve or download
     args = parser.parse_args()
     peer = Peer(args.peer_port, args.dht_port)
     try:
